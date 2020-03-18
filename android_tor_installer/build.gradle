@@ -66,6 +66,7 @@ publishing {
 }
 dependencies {
     implementation project(':universal')
+	implementation project(':android')
     implementation 'org.torproject:tor-android-binary:0.3.5.8-rc-v2'
 }
 
