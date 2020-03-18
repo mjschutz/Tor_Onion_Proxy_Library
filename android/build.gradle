@@ -2,11 +2,14 @@ apply plugin: 'com.android.library'
 apply plugin: 'maven'
 apply plugin: 'maven-publish'
 
+import com.android.build.gradle.tasks.MergeResources
+
 buildscript {
     repositories {
         mavenLocal()
         mavenCentral()
         google()
+		jcenter()
     }
     dependencies {
         classpath "com.android.tools.build:gradle:${androidplugin}"
@@ -34,6 +37,11 @@ android {
     }
 }
 
+task sourceJar(type: Jar) {
+    from android.sourceSets.main.java.srcDirs
+    classifier "source"
+}
+
 publishing {
     publications {
         android(MavenPublication) {
@@ -59,9 +67,9 @@ publishing {
     }
 }
 
-task sourceJar(type: Jar) {
-    from android.sourceSets.main.java.srcDirs
-    classifier "source"
+
+configurations {
+	tor
 }
 
 dependencies {
@@ -70,6 +78,7 @@ dependencies {
     implementation 'org.slf4j:slf4j-api:1.7.25'
     implementation 'org.slf4j:slf4j-android:1.7.25'
     implementation 'com.android.support:appcompat-v7:28.0.0'
+	tor 'org.briarproject:obfs4proxy-android:0.0.11-2@zip'
     testImplementation 'junit:junit:4.12'
     androidTestImplementation project(':android_tor_installer')
     androidTestImplementation 'org.torproject:tor-android-binary:0.3.5.8-rc-v2'
@@ -81,22 +90,42 @@ repositories {
     mavenLocal()
     mavenCentral()
     google()
+	jcenter()
     maven { url "https://raw.githubusercontent.com/guardianproject/gpmaven/master" }
 }
 
-/**
- * Rename the native libraries to have 'so' extension so that the build will automatically package it in aar
- */
-task copyPluggableTransports(type: Copy) {
-    from "../external/pluto/bin"
-    into "src/main/jniLibs"
-    rename { filename ->
-        filename.replace 'obfs4proxy', 'libObfs4proxy.so'
-    }
+def torBinariesDir = 'src/main/jniLibs'
+
+task cleanTorBinaries {
+	delete torBinariesDir
 }
 
-gradle.projectsEvaluated {
-    preBuild.dependsOn(copyPluggableTransports)
+clean.dependsOn cleanTorBinaries
+
+task unpackTorBinaries {
+	doLast {
+		configurations.tor.each {dep->
+			FileTree mainTree = zipTree(dep)
+			mainTree.matching {
+				include "**/*_pie.zip"
+			}.each { f->
+				def baseDirName = f.name.replace("obfs4proxy_", "").replace("_pie.zip", "").replaceFirst(/arm64$/, 'arm64-v8a').replaceFirst(/arm$/, 'armeabi-v7a')
+				copy {
+					from zipTree(f)
+					into "$torBinariesDir/$baseDirName"
+					rename { filename ->
+						filename.replace 'obfs4proxy', 'libObfs4proxy.so'
+					}
+				} 
+			}
+		} 
+   }
+	dependsOn cleanTorBinaries
+}
+
+tasks.withType(MergeResources) {
+	inputs.dir torBinariesDir
+	dependsOn unpackTorBinaries
 }
 
 task sourcesJar(type: Jar) {
